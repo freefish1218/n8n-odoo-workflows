@@ -1,0 +1,476 @@
+{
+  "id": "998d49b5-c11a-51f9-9576-190dc3583146",
+  "name": "Odoo \u00b7 Idempotent Sales Order Upsert",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Odoo sales-order upsert\nReceives a normalized paid order, validates it, finds the customer and existing order by `client_order_ref`, then creates or updates the Odoo sales order. The external reference is the idempotency key.\n\nAttach one Odoo API credential to the four Odoo nodes. Test in a staging database first.",
+        "height": 300,
+        "width": 420,
+        "color": 7
+      },
+      "id": "f185f62f-5325-5177-abc9-19230bcac0b2",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "odoo-sales-order-upsert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "f6ac860a-0423-5910-9a8a-d2f3e6092164",
+      "name": "Paid order webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const x = $json.body ?? $json;\nfor (const k of ['external_id','customer_email','total']) { if (!x[k]) throw new Error(`Missing ${k}`); }\nreturn [{json:{external_id:String(x.external_id), customer_email:String(x.customer_email).trim().toLowerCase(), customer_name:x.customer_name || x.customer_email, total:Number(x.total), currency:x.currency || 'USD', order_date:x.order_date || new Date().toISOString(), source_payload:x}}];"
+      },
+      "id": "f24c2538-e752-5848-a75f-6ac6b107916a",
+      "name": "Validate and normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "getAll",
+        "customResource": {
+          "__rl": true,
+          "value": "res.partner",
+          "mode": "list",
+          "cachedResultName": "res.partner"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "fieldsList": "id,name,email"
+        },
+        "filters": {
+          "filter": [
+            {
+              "fieldName": "email",
+              "operator": "equal",
+              "value": "={{ $json.customer_email }}"
+            }
+          ]
+        }
+      },
+      "id": "b388f9d1-3e36-59d6-b5d4-8a0cf8cb0e10",
+      "name": "Find Odoo customer",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        -250,
+        -120
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "48317958-e4d8-537a-af0f-1998a314493c",
+      "name": "Customer found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -20,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "create",
+        "customResource": {
+          "__rl": true,
+          "value": "res.partner",
+          "mode": "list",
+          "cachedResultName": "res.partner"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Validate and normalize').item.json.customer_name }}",
+            "email": "={{ $('Validate and normalize').item.json.customer_email }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "a9095aff-7498-5fa7-82be-8bfc0c56c963",
+      "name": "Create Odoo customer",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "getAll",
+        "customResource": {
+          "__rl": true,
+          "value": "sale.order",
+          "mode": "list",
+          "cachedResultName": "sale.order"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "fieldsList": "id,name,client_order_ref,amount_total,state"
+        },
+        "filters": {
+          "filter": [
+            {
+              "fieldName": "client_order_ref",
+              "operator": "equal",
+              "value": "={{ $('Validate and normalize').item.json.external_id }}"
+            }
+          ]
+        }
+      },
+      "id": "1769e81c-b6d9-5291-b548-6f8feb1ba565",
+      "name": "Find order by external ref",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.existing_order_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cbbb6602-945f-5287-bb23-37c5bedaecf8",
+      "name": "Order exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "update",
+        "customResource": {
+          "__rl": true,
+          "value": "sale.order",
+          "mode": "list",
+          "cachedResultName": "sale.order"
+        },
+        "recordId": {
+          "__rl": true,
+          "value": "={{ $json.existing_order_id }}",
+          "mode": "id"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "note": "=Synced by n8n at {{ $now.toISO() }}; source total {{ $('Validate and normalize').item.json.total }} {{ $('Validate and normalize').item.json.currency }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "3621aa76-f747-59ba-8997-4892f6dee988",
+      "name": "Update existing order",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        940,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "create",
+        "customResource": {
+          "__rl": true,
+          "value": "sale.order",
+          "mode": "list",
+          "cachedResultName": "sale.order"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "partner_id": "={{ $json.partner_id }}",
+            "client_order_ref": "={{ $json.external_id }}",
+            "date_order": "={{ $json.order_date.slice(0,19).replace('T',' ') }}",
+            "note": "=Imported by n8n. Source total: {{ $json.total }} {{ $json.currency }}. Add product-line mapping for your catalog before production."
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "dcd7d68d-1b38-50f2-a1f1-f1695b2d9282",
+      "name": "Create draft order",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        940,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$input.first().json; const ctx=$('Attach order context').item.json; return [{json:{ok:true,odoo_id:input.id,external_id:ctx.external_id,action:ctx.existing_order_id?'updated':'created',processed_at:new Date().toISOString()}}];"
+      },
+      "id": "de2ff3e6-0f1c-5166-bf29-fbf22974ef5d",
+      "name": "Return audit result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$('Validate and normalize').item.json; if(!$json.id) throw new Error('Odoo customer id missing'); return [{json:{...base,partner_id:$json.id}}];"
+      },
+      "id": "388ec96d-366c-555e-a91e-d6c80a6298bb",
+      "name": "Use customer context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$('Use customer context').item.json; return [{json:{...base,existing_order_id:$json.id||null,existing_order_name:$json.name||null}}];"
+      },
+      "id": "2f92aea7-7d31-5afe-9e1e-40ff2e5799cd",
+      "name": "Attach order context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Paid order webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and normalize": {
+      "main": [
+        [
+          {
+            "node": "Find Odoo customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Odoo customer": {
+      "main": [
+        [
+          {
+            "node": "Customer found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer found?": {
+      "main": [
+        [
+          {
+            "node": "Use customer context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Odoo customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Odoo customer": {
+      "main": [
+        [
+          {
+            "node": "Use customer context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find order by external ref": {
+      "main": [
+        [
+          {
+            "node": "Attach order context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order exists?": {
+      "main": [
+        [
+          {
+            "node": "Update existing order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create draft order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update existing order": {
+      "main": [
+        [
+          {
+            "node": "Return audit result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create draft order": {
+      "main": [
+        [
+          {
+            "node": "Return audit result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use customer context": {
+      "main": [
+        [
+          {
+            "node": "Find order by external ref",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach order context": {
+      "main": [
+        [
+          {
+            "node": "Order exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "217960df-e6dd-553f-ad69-993e00b0743c",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

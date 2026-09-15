@@ -1,0 +1,328 @@
+{
+  "id": "c3d8c409-703e-5d73-be1e-61e0e2d83d79",
+  "name": "Odoo \u00b7 Overdue Invoice Dunning with Audit Trail",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Odoo overdue-invoice follow-up\nQueries posted, unpaid customer invoices, computes a 3-stage escalation policy, checks for an existing tagged activity, and creates one only when needed. This keeps the audit trail in Odoo and avoids duplicate reminders.",
+        "height": 280,
+        "width": 420,
+        "color": 7
+      },
+      "id": "43e000b1-d468-53ee-bb63-46503da94d21",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "767e32e7-4761-54b4-8d0b-8950c772c93a",
+      "name": "Every weekday 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "getAll",
+        "customResource": {
+          "__rl": true,
+          "value": "account.move",
+          "mode": "list",
+          "cachedResultName": "account.move"
+        },
+        "returnAll": true,
+        "options": {
+          "fieldsList": "id,name,partner_id,invoice_date_due,amount_residual,currency_id,payment_state,state,move_type"
+        },
+        "filters": {
+          "filter": [
+            {
+              "fieldName": "state",
+              "operator": "equal",
+              "value": "posted"
+            },
+            {
+              "fieldName": "payment_state",
+              "operator": "notEqual",
+              "value": "paid"
+            },
+            {
+              "fieldName": "move_type",
+              "operator": "equal",
+              "value": "out_invoice"
+            },
+            {
+              "fieldName": "invoice_date_due",
+              "operator": "lesserThen",
+              "value": "={{ $today.toISODate() }}"
+            }
+          ]
+        }
+      },
+      "id": "62aea737-28aa-5d7e-b5af-ac23e14d8786",
+      "name": "Get overdue invoices",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        -450,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nreturn $input.all().map(({json:i}) => {\n const due = new Date(`${i.invoice_date_due}T00:00:00Z`);\n const days = Math.floor((today-due)/86400000);\n const stage = days >= 30 ? 'final' : days >= 14 ? 'firm' : days >= 3 ? 'gentle' : null;\n return {json:{...i,days_overdue:days,stage,tag:`n8n-dunning:${i.id}:${stage}`}};\n}).filter(x=>x.json.stage);"
+      },
+      "id": "80fee8a3-f586-5adf-8d2e-5d94299ebcf7",
+      "name": "Compute escalation stage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "getAll",
+        "customResource": {
+          "__rl": true,
+          "value": "mail.activity",
+          "mode": "list",
+          "cachedResultName": "mail.activity"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "fieldsList": "id,summary,note,date_deadline"
+        },
+        "filters": {
+          "filter": [
+            {
+              "fieldName": "res_id",
+              "operator": "equal",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "fieldName": "summary",
+              "operator": "equal",
+              "value": "={{ $json.tag }}"
+            }
+          ]
+        }
+      },
+      "id": "4438276e-0251-58df-9603-371cd56c45e1",
+      "name": "Find existing activity",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        40,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.existing_activity_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "110ddfb4-2a33-5f03-8ff3-3f7b62d1f46e",
+      "name": "Activity missing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "create",
+        "customResource": {
+          "__rl": true,
+          "value": "mail.activity",
+          "mode": "list",
+          "cachedResultName": "mail.activity"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "res_id": "={{ $json.id }}",
+            "res_model_id": 1,
+            "summary": "={{ $json.tag }}",
+            "note": "=Invoice {{ $json.name }} is {{ $json.days_overdue }} days overdue with {{ $json.amount_residual }} outstanding. Stage: {{ $json.stage }}. Replace res_model_id=1 with the account.move model ID from your database.",
+            "date_deadline": "={{ $today.toISODate() }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "e3c70c65-d0aa-55e4-a4be-2d8027b49c40",
+      "name": "Create follow-up activity",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        740,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx=$('Attach invoice context').item.json; return $input.all().map(x=>({json:{created_activity_id:x.json.id,invoice_id:ctx.id,stage:ctx.stage}}));"
+      },
+      "id": "3a29b01c-a461-584e-a45a-3cf36045d0e6",
+      "name": "Build run summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$('Compute escalation stage').item.json; return [{json:{...base,existing_activity_id:$json.id||null}}];"
+      },
+      "id": "57b96528-a253-505b-b388-86ac10549f5b",
+      "name": "Attach invoice context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        270,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Every weekday 09:00": {
+      "main": [
+        [
+          {
+            "node": "Get overdue invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get overdue invoices": {
+      "main": [
+        [
+          {
+            "node": "Compute escalation stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute escalation stage": {
+      "main": [
+        [
+          {
+            "node": "Find existing activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find existing activity": {
+      "main": [
+        [
+          {
+            "node": "Attach invoice context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Activity missing?": {
+      "main": [
+        [
+          {
+            "node": "Create follow-up activity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Create follow-up activity": {
+      "main": [
+        [
+          {
+            "node": "Build run summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach invoice context": {
+      "main": [
+        [
+          {
+            "node": "Activity missing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "18ffd518-fcec-5cf0-8b27-e1c75f173378",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

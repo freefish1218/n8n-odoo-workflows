@@ -1,0 +1,537 @@
+{
+  "id": "865f5e19-0551-5c24-a339-61972378fc38",
+  "name": "Odoo \u00b7 CRM Lead Intake and Deduplicated Upsert",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Odoo CRM lead intake\nValidates a web lead, normalizes email, upserts the contact, deduplicates opportunities by email, and creates a follow-up activity. Bad submissions stop before Odoo writes.",
+        "height": 260,
+        "width": 420,
+        "color": 7
+      },
+      "id": "efcc95c0-7cbb-5e41-bdbc-a07b2570e60c",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "odoo-crm-lead-upsert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "413d9211-b06f-54d4-a964-f5274919fe38",
+      "name": "Lead webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const x=$json.body ?? $json;\nconst email=String(x.email||'').trim().toLowerCase();\nif(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) throw new Error('Valid email required');\nconst name=String(x.name||'').trim(); if(!name) throw new Error('Name required');\nreturn [{json:{name,email,phone:String(x.phone||''),company:String(x.company||''),need:String(x.need||'General enquiry').slice(0,500),source:String(x.source||'website').slice(0,80)}}];"
+      },
+      "id": "06adc5a2-d45e-568a-8334-7cd548a76ba1",
+      "name": "Validate lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "getAll",
+        "customResource": {
+          "__rl": true,
+          "value": "res.partner",
+          "mode": "list",
+          "cachedResultName": "res.partner"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "fieldsList": "id,name,email,phone"
+        },
+        "filters": {
+          "filter": [
+            {
+              "fieldName": "email",
+              "operator": "equal",
+              "value": "={{ $json.email }}"
+            }
+          ]
+        }
+      },
+      "id": "e37f8e44-f961-57cf-ad3f-874cfc0b1199",
+      "name": "Find contact",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        -100
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "12935bf2-dcf8-5d31-ae1f-5eb960eed9f2",
+      "name": "Contact exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -60,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "update",
+        "customResource": {
+          "__rl": true,
+          "value": "res.partner",
+          "mode": "list",
+          "cachedResultName": "res.partner"
+        },
+        "recordId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Validate lead').item.json.name }}",
+            "phone": "={{ $('Validate lead').item.json.phone }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "5efa75ce-b873-5b8b-8166-a5d9ec391df5",
+      "name": "Refresh contact",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        180,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "create",
+        "customResource": {
+          "__rl": true,
+          "value": "res.partner",
+          "mode": "list",
+          "cachedResultName": "res.partner"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Validate lead').item.json.name }}",
+            "email": "={{ $('Validate lead').item.json.email }}",
+            "phone": "={{ $('Validate lead').item.json.phone }}",
+            "company_name": "={{ $('Validate lead').item.json.company }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "5cc0a284-c1c8-5491-9822-2f77af519083",
+      "name": "Create contact",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        180,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "getAll",
+        "customResource": {
+          "__rl": true,
+          "value": "crm.lead",
+          "mode": "list",
+          "cachedResultName": "crm.lead"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "fieldsList": "id,name,email_from,type,active"
+        },
+        "filters": {
+          "filter": [
+            {
+              "fieldName": "email_from",
+              "operator": "equal",
+              "value": "={{ $('Validate lead').item.json.email }}"
+            },
+            {
+              "fieldName": "type",
+              "operator": "equal",
+              "value": "opportunity"
+            },
+            {
+              "fieldName": "active",
+              "operator": "equal",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "id": "afbd3bfe-60ba-57ee-bf52-d67a9cc30cee",
+      "name": "Find open opportunity",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        600,
+        -100
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.opportunity_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e7f7533e-90fc-5c71-808a-0e1ced68bf1d",
+      "name": "Opportunity exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        940,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "update",
+        "customResource": {
+          "__rl": true,
+          "value": "crm.lead",
+          "mode": "list",
+          "cachedResultName": "crm.lead"
+        },
+        "recordId": {
+          "__rl": true,
+          "value": "={{ $json.opportunity_id }}",
+          "mode": "id"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "description": "=New intake via {{ $json.source }} at {{ $now.toISO() }}\nNeed: {{ $json.need }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "89cb5c80-a970-54f7-aede-c156c6030859",
+      "name": "Append new context",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "odooApiKeyApi",
+        "resource": "custom",
+        "operation": "create",
+        "customResource": {
+          "__rl": true,
+          "value": "crm.lead",
+          "mode": "list",
+          "cachedResultName": "crm.lead"
+        },
+        "fieldsToSend": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.company || $json.name }} \u00b7 {{ $json.need.slice(0,80) }}",
+            "type": "opportunity",
+            "email_from": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "description": "=Source: {{ $json.source }}\nNeed: {{ $json.need }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "9c358b76-1e12-5fc2-9571-d9e9ea605099",
+      "name": "Create opportunity",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.first().json; const ctx=$('Attach opportunity context').item.json; return [{json:{ok:true,odoo_opportunity_id:r.id,email:ctx.email,action:ctx.opportunity_id?'updated':'created',processed_at:new Date().toISOString()}}];"
+      },
+      "id": "667c7f50-aff3-52f3-8b31-fe800254371a",
+      "name": "Return CRM audit result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$('Validate lead').item.json; if(!$json.id) throw new Error('Odoo contact id missing'); return [{json:{...base,contact_id:$json.id}}];"
+      },
+      "id": "f1d86768-3ee8-5c84-b815-0e99c86cd2e1",
+      "name": "Use contact context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        430,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$('Use contact context').item.json; return [{json:{...base,opportunity_id:$json.id||null}}];"
+      },
+      "id": "f5c360da-a609-531b-8a02-fe414cafc9c8",
+      "name": "Attach opportunity context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        770,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "Lead webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate lead": {
+      "main": [
+        [
+          {
+            "node": "Find contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find contact": {
+      "main": [
+        [
+          {
+            "node": "Contact exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact exists?": {
+      "main": [
+        [
+          {
+            "node": "Refresh contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh contact": {
+      "main": [
+        [
+          {
+            "node": "Use contact context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create contact": {
+      "main": [
+        [
+          {
+            "node": "Use contact context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find open opportunity": {
+      "main": [
+        [
+          {
+            "node": "Attach opportunity context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opportunity exists?": {
+      "main": [
+        [
+          {
+            "node": "Append new context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create opportunity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append new context": {
+      "main": [
+        [
+          {
+            "node": "Return CRM audit result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create opportunity": {
+      "main": [
+        [
+          {
+            "node": "Return CRM audit result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use contact context": {
+      "main": [
+        [
+          {
+            "node": "Find open opportunity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach opportunity context": {
+      "main": [
+        [
+          {
+            "node": "Opportunity exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "607e0874-bcb8-517a-af9c-af13c2e1fe50",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
