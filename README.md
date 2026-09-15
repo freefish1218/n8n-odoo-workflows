@@ -1,6 +1,6 @@
 # n8n + Odoo: three production-minded workflow patterns
 
-**Review page:** https://mybots.vip/n8n-odoo/ · **Source:** https://github.com/freefish1218/n8n-odoo-workflows
+**Review page:** https://mybots.vip/workflows/ · **Source:** https://github.com/freefish1218/n8n-odoo-workflows
 
 These workflows come from practical AI-agent and Odoo ERP delivery work for small and midsize businesses. They focus on the failure modes that matter in real projects: duplicate writes, weak validation, silent collection automation, and missing audit trails.
 
