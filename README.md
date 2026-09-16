@@ -21,7 +21,7 @@ A live Odoo execution is intentionally not claimed here: each Odoo database can 
 
 ## Maintainer context
 
-MyBots is operated by the founder of a China-based AI and Odoo consultancy. The work combines ERP implementation, automation design, and AI-agent delivery. We are publishing a small set of reviewable workflows first and will improve them from import and user feedback.
+MyBots publishes small, inspectable automation patterns for teams running Odoo. The material comes from hands-on ERP and workflow-automation work. We are releasing a reviewable set first and will improve it from import feedback and user reports.
 
 ## License
 
